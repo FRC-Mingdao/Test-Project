@@ -1,0 +1,126 @@
+#include <Encoder.h>
+#include <IterativeRobot.h>
+#include <SmartDashboard/SmartDashboard.h>
+#include <WPILib.h>
+#include <ctre/Phoenix.h>
+#define RAT 84.12
+#define TEAM 1 // 1 for blue and 2 for red
+
+using namespace frc;
+using namespace std;
+
+class Robot : public IterativeRobot {
+public:
+	std::shared_ptr<NetworkTable> table;
+	Robot(){
+		talon2.Follow(talon1);
+		talon4.Follow(talon3);
+		talon1.TalonSRX::ConfigSelectedFeedbackSensor(CTRE_MagEncoder_Absolute, 0, 10);
+		talon3.TalonSRX::ConfigSelectedFeedbackSensor(CTRE_MagEncoder_Absolute, 0, 10);
+		talon1.SetInverted(true);
+		talon2.SetInverted(true);
+		talon3.SetInverted(true);
+		talon4.SetInverted(true);
+	}
+	void RobotInit() {
+		table = NetworkTable::GetTable("myTable");
+	}
+	void AutonomousInit() {
+		int l = left_ultrasonic.GetValue();
+		int r = right_ultrasonic.GetValue();
+		while (table->GetNumber("switch_color", 0) == 0) {
+			//left or right by ultrasonic, spin accordingly
+			if (l < r) {
+				m_robotDrive.ArcadeDrive(0.0, 0.5);
+			} else {
+				m_robotDrive.ArcadeDrive(0.0, -0.5);
+			}
+		}
+		int ultra = m_ultrasonic.GetValue() * kValueToCm;
+		s_mode = table->GetNumber("switch_mode", 0);
+		s_color = table->GetNumber("switch_color", 0);
+		if (s_mode == 2 && ultra < 350) s_mode = 2;
+		else if ((s_mode == 1 || s_mode == 3) && ultra < 350) s_mode = 2;
+		dis = m_encoder.GetDistance()/RAT;
+		dis_dest = dis + 50;
+	}
+	void AutonomousPeriodic() override {
+		int ultra = m_ultrasonic.GetValue() * kValueToCm;
+		int left_ultra = left_ultrasonic.GetValue() * kValueToCm;
+		int right_ultra = right_ultrasonic.GetValue() * kValueToCm;
+		talon3.SetSensorPhase(true);
+		dis = m_encoder.GetDistance()/RAT;
+		SmartDashboard::PutNumber("Encoder Distance", dis);
+
+		switch(auto_stat) {
+		case 0: // start forward and turn at 50 cm or when within 50 cm
+			if (!(dis_dest < dis) && !(ultra < 50)) {
+				m_robotDrive.ArcadeDrive(0.6, 0.0);
+			} else {
+				if (TEAM == s_color) {
+					//turn left 90 d
+				} else {
+					//turn right 90 d
+				}
+				auto_stat = 1;
+			}
+			break;
+		case 1: // start toward side wall and turn when within 50 cm
+			if (!(ultra < 50)) {
+				waitedAlready = false;
+				m_robotDrive.ArcadeDrive(0.6, 0.0);
+			} else if (ultra < 50 && waitedAlready == false) {
+				m_robotDrive.ArcadeDrive(0.0, 0.0);
+				waitedAlready = true;
+				Wait(0.5);
+			} else {
+				if (TEAM == s_color) {
+					//turn right 90d
+				} else {
+					//turn left 90d
+				}
+				waitedAlready = false;
+				auto_stat = 2;
+			}
+			break;
+		case 2: // start until left/right sensed switch and turn
+			
+			break;
+		case 3: // start toward switch and stop when within 20 cm
+			if (!(ultra < 20)) {
+				m_robotDrive.ArcadeDrive(0.6, 0.0);
+			} else {
+				m_robotDrive.ArcadeDrive(0.0, 0.0);
+			}
+			break;
+		}
+	}
+
+
+private:
+	static constexpr double kValueToCm = 0.3175;
+	WPI_TalonSRX talon1{1};
+	WPI_TalonSRX talon2{2};
+	WPI_TalonSRX talon3{3};
+	WPI_TalonSRX talon4{4};
+
+	SpeedControllerGroup left{talon1, talon2};
+	SpeedControllerGroup right{talon3, talon4};
+	DifferentialDrive m_robotDrive{left, right};
+	AnalogInput m_ultrasonic{0};
+	AnalogInput left_ultrasonic{1};
+	AnalogInput right_ultrasonic{2};
+
+	Encoder m_encoder{1,2,false,Encoder::k4X};
+
+	double dis = 0;
+	double dis_dest = 0;
+
+	int s_mode = 0;
+	int s_color = 0;
+
+	int auto_stat = 0;
+	bool waitedAlready = false;
+};
+
+START_ROBOT_CLASS(Robot)
